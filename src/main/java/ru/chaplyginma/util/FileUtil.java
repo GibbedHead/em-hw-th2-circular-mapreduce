@@ -28,9 +28,7 @@ public class FileUtil {
                 }
                 // Удаляем файл или пустую директорию
                 boolean deleted = file.delete();
-                if (deleted) {
-                    System.out.println("Удалён: " + file.getAbsolutePath());
-                } else {
+                if (!deleted) {
                     System.out.println("Не удалось удалить: " + file.getAbsolutePath());
                 }
             }

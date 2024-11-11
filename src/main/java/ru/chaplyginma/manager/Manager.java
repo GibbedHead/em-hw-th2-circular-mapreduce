@@ -1,8 +1,11 @@
 package ru.chaplyginma.manager;
 
 import ru.chaplyginma.task.MapTask;
+import ru.chaplyginma.task.MapTaskResult;
 
-import java.util.*;
+import java.util.Comparator;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.*;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
@@ -22,7 +25,7 @@ public class Manager extends Thread {
     private final Lock lock = new ReentrantLock();
     private final Condition rescheduledCondition = lock.newCondition();
 
-    private final Map<MapTask, String> resultMap = new ConcurrentSkipListMap<>(Comparator.comparingInt(MapTask::getId));
+    private final Map<MapTask, MapTaskResult> resultMap = new ConcurrentSkipListMap<>(Comparator.comparingInt(MapTask::getId));
 
     public Manager(Set<String> files, int numReduceTasks) {
         this.files = files;
@@ -71,7 +74,7 @@ public class Manager extends Thread {
         }
     }
 
-    public void completeMapTask(MapTask task, String result) {
+    public void completeMapTask(MapTask task, MapTaskResult mapTaskResult) {
         lock.lock();
         try {
             if (resultMap.containsKey(task)) {
@@ -82,7 +85,7 @@ public class Manager extends Thread {
             if (scheduledFuture != null) {
                 scheduledFuture.cancel(false); // Отменяем таймер выполнения
             }
-            resultMap.put(task, result);
+            resultMap.put(task, mapTaskResult);
             mapLatch.countDown();
             rescheduledCondition.signal();
             System.out.println("Map task " + task + " completed.");
@@ -122,7 +125,7 @@ public class Manager extends Thread {
                     mapTaskQueue.offer(task); // Возвращаем задачу в очередь
                     System.out.println("Map task " + task.getId() + " returned to queue due to timeout");
                     System.out.println(mapTaskQueue);
-                     // Удаляем таймер
+                    // Удаляем таймер
                     rescheduledCondition.signal();
                     task.setAssigned(false);
                     System.out.println("Task " + task.getId() + " timed out");

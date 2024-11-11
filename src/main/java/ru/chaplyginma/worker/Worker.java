@@ -3,6 +3,7 @@ package ru.chaplyginma.worker;
 import ru.chaplyginma.domain.KeyValue;
 import ru.chaplyginma.manager.Manager;
 import ru.chaplyginma.task.MapTask;
+import ru.chaplyginma.task.MapTaskResult;
 import ru.chaplyginma.util.FileUtil;
 
 import java.io.BufferedReader;
@@ -10,6 +11,7 @@ import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 
 public class Worker extends Thread {
@@ -36,8 +38,9 @@ public class Worker extends Thread {
                 List<KeyValue> keyValues = map(mapTask.getFile());
                 if (keyValues != null) {
                     System.out.println("Map result size for file " + mapTask.getFile() + ": " + keyValues.size());
-                    writeIntermediateFiles(keyValues, mapTask.getId(), mapTask.getNumReduceTasks());
-                    manager.completeMapTask(mapTask, "MapTask: " + mapTask.getId() + " completed");
+                    MapTaskResult mapTaskResult = new MapTaskResult(new HashSet<>());
+                    writeIntermediateFiles(keyValues, mapTask.getId(), mapTask.getNumReduceTasks(), mapTaskResult);
+                    manager.completeMapTask(mapTask, mapTaskResult);
                 }
                 mapTask = manager.getNextMapTask(Thread.currentThread());
             }
@@ -66,7 +69,7 @@ public class Worker extends Thread {
         return result;
     }
 
-    private void writeIntermediateFiles(List<KeyValue> keyValues, int taskId, int numReduceTasks) {
+    private void writeIntermediateFiles(List<KeyValue> keyValues, int taskId, int numReduceTasks, MapTaskResult mapTaskResult) {
         String taskDir = "%s/%s/%d".formatted(workDir, getName(), taskId);
         FileUtil.createDirectory(taskDir);
         for (KeyValue keyValue : keyValues) {
@@ -79,6 +82,7 @@ public class Worker extends Thread {
             try (FileWriter fileWriter = new FileWriter(fileName, true)) { // 'true' означает, что мы добавляем текст
                 String text = keyValue + "\n";
                 fileWriter.write(text); // Записываем текст в файл
+                mapTaskResult.files().add(fileName);
             } catch (IOException e) {
                 System.err.println("Ошибка при записи в файл: " + e.getMessage());
             }
