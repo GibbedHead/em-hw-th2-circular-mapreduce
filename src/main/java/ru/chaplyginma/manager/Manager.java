@@ -15,7 +15,7 @@ import java.util.concurrent.locks.ReentrantLock;
 
 public class Manager extends Thread {
 
-    private static final int WORKER_TIMEOUT_MILLISECONDS = 500;
+    private static final int WORKER_TIMEOUT_MILLISECONDS = 200;
 
     private final Set<String> files;
     private final int numReduceTasks;
