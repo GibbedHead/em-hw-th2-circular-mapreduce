@@ -10,9 +10,7 @@ public class FileUtil {
         if (!directory.exists()) {
             // Если директория не существует, создаём её
             boolean created = directory.mkdirs();
-            if (created) {
-                System.out.println("Директория " + directoryPath + " успешно создана.");
-            } else {
+            if (!created) {
                 System.out.println("Не удалось создать директорию " + directoryPath);
             }
         }

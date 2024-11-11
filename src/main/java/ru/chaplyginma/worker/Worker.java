@@ -31,7 +31,7 @@ public class Worker extends Thread {
     }
 
     @Override
-    public void run() {
+    public void run() throws IllegalStateException {
         try {
             Task task;
             task = manager.getNextMapTask(Thread.currentThread());
@@ -45,19 +45,18 @@ public class Worker extends Thread {
             }
         } catch (InterruptedException e) {
             interrupt();
-            System.out.println(getName() + " interrupted");
+            System.err.printf("%s was interrupted%n", this.getName());
         }
 
     }
 
     private void executeMap(MapTask mapTask) {
-        System.out.println(getName() + ": starting map task on file " + mapTask.getFile());
+        System.out.printf("%s starting map task %d%n", this.getName(), mapTask.getId());
         List<KeyValue> keyValues = map(mapTask.getFile());
         if (keyValues != null) {
-            System.out.println("Map result size for file " + mapTask.getFile() + ": " + keyValues.size());
             MapTaskResult mapTaskResult = new MapTaskResult(new HashSet<>());
             writeIntermediateFiles(keyValues, mapTask.getId(), mapTask.getNumReduceTasks(), mapTaskResult);
-            manager.completeMapTask(mapTask, mapTaskResult);
+            manager.completeMapTask(mapTask, mapTaskResult, Thread.currentThread());
         }
     }
 
@@ -89,18 +88,18 @@ public class Worker extends Thread {
                 reduceTaskId = Math.abs(hash) % numReduceTasks;
             }
             String fileName = "%s/mr-%d-%d.txt".formatted(taskDir, taskId, reduceTaskId);
-            try (FileWriter fileWriter = new FileWriter(fileName, true)) { // 'true' означает, что мы добавляем текст
+            try (FileWriter fileWriter = new FileWriter(fileName, true)) {
                 String text = keyValue + "\n";
-                fileWriter.write(text); // Записываем текст в файл
+                fileWriter.write(text);
                 mapTaskResult.files().add(fileName);
             } catch (IOException e) {
-                System.err.println("Ошибка при записи в файл: " + e.getMessage());
+                System.err.printf("Error writing file `%s`: %s%n ", fileName, e.getMessage());
             }
         }
     }
 
     private void executeReduce(ReduceTask reduceTask) {
-        System.out.println(getName() + ": starting reduce task " + reduceTask);
+        System.out.printf("%s starting reduce task %d%n", this.getName(), reduceTask.getId());
     }
 
 

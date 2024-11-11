@@ -15,7 +15,7 @@ import java.util.Set;
 
 public class Main {
     public static void main(String[] args) {
-        final int numWorkers = 2;
+        final int numWorkers = 4;
         final int numReduceTasks = 7;
         final String workDir = "result";
 

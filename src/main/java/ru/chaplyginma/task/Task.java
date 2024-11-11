@@ -5,15 +5,17 @@ import java.util.concurrent.TimeUnit;
 
 public class Task {
 
-    private static int idGenerator = 1;
+    private static int idGenerator = 0;
 
-    private int id;
+    private final int id;
     private Instant startTime;
     private boolean isAssigned;
 
+    public Task() {
+        this.id = getNextId();
+    }
 
     public void start() {
-        this.id = getNextId();
         this.startTime = Instant.now();
         this.isAssigned = true;
     }
