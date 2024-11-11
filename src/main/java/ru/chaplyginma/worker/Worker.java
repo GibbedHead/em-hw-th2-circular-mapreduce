@@ -5,6 +5,7 @@ import ru.chaplyginma.manager.Manager;
 import ru.chaplyginma.task.MapTask;
 import ru.chaplyginma.task.MapTaskResult;
 import ru.chaplyginma.task.ReduceTask;
+import ru.chaplyginma.task.Task;
 import ru.chaplyginma.util.FileUtil;
 
 import java.io.BufferedReader;
@@ -31,34 +32,33 @@ public class Worker extends Thread {
 
     @Override
     public void run() {
-
         try {
-            MapTask mapTask;
-            mapTask = manager.getNextMapTask(Thread.currentThread());
-            while (mapTask != null) {
-                System.out.println(getName() + ": starting map task on file " + mapTask.getFile());
-                List<KeyValue> keyValues = map(mapTask.getFile());
-                if (keyValues != null) {
-                    System.out.println("Map result size for file " + mapTask.getFile() + ": " + keyValues.size());
-                    MapTaskResult mapTaskResult = new MapTaskResult(new HashSet<>());
-                    writeIntermediateFiles(keyValues, mapTask.getId(), mapTask.getNumReduceTasks(), mapTaskResult);
-                    manager.completeMapTask(mapTask, mapTaskResult);
+            Task task;
+            task = manager.getNextMapTask(Thread.currentThread());
+            while (task != null) {
+                switch (task) {
+                    case MapTask mapTask -> executeMap(mapTask);
+                    case ReduceTask reduceTask -> executeReduce(reduceTask);
+                    default -> throw new IllegalStateException("Unexpected value type: " + task.getClass().getName());
                 }
-                mapTask = manager.getNextMapTask(Thread.currentThread());
-            }
-            System.out.println(getName() + " finished maps");
-
-            ReduceTask reduceTask;
-            reduceTask = manager.getNextReduceTask(Thread.currentThread());
-            while (reduceTask != null) {
-                System.out.println(getName() + ": starting reduce task" + reduceTask.getId());
-                reduceTask = manager.getNextReduceTask(Thread.currentThread());
+                task = manager.getNextMapTask(Thread.currentThread());
             }
         } catch (InterruptedException e) {
             interrupt();
             System.out.println(getName() + " interrupted");
         }
 
+    }
+
+    private void executeMap(MapTask mapTask) {
+        System.out.println(getName() + ": starting map task on file " + mapTask.getFile());
+        List<KeyValue> keyValues = map(mapTask.getFile());
+        if (keyValues != null) {
+            System.out.println("Map result size for file " + mapTask.getFile() + ": " + keyValues.size());
+            MapTaskResult mapTaskResult = new MapTaskResult(new HashSet<>());
+            writeIntermediateFiles(keyValues, mapTask.getId(), mapTask.getNumReduceTasks(), mapTaskResult);
+            manager.completeMapTask(mapTask, mapTaskResult);
+        }
     }
 
     private List<KeyValue> map(String file) {
@@ -97,6 +97,10 @@ public class Worker extends Thread {
                 System.err.println("Ошибка при записи в файл: " + e.getMessage());
             }
         }
+    }
+
+    private void executeReduce(ReduceTask reduceTask) {
+        System.out.println(getName() + ": starting reduce task " + reduceTask);
     }
 
 

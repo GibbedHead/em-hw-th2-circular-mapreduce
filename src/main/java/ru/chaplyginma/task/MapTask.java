@@ -2,18 +2,12 @@ package ru.chaplyginma.task;
 
 public class MapTask extends Task {
 
-    private final int id;
     private final String file;
     private final int numReduceTasks;
 
-    public MapTask(int id, String file, int numReduceTasks) {
-        this.id = id;
+    public MapTask(String file, int numReduceTasks) {
         this.file = file;
         this.numReduceTasks = numReduceTasks;
-    }
-
-    public int getId() {
-        return id;
     }
 
     public String getFile() {
@@ -27,7 +21,7 @@ public class MapTask extends Task {
     @Override
     public String toString() {
         return "MapTask{" +
-                "id=" + id +
+                "id=" + getId() +
                 '}';
     }
 }

@@ -5,11 +5,15 @@ import java.util.concurrent.TimeUnit;
 
 public class Task {
 
+    private static int idGenerator = 1;
+
+    private int id;
     private Instant startTime;
     private boolean isAssigned;
 
 
     public void start() {
+        this.id = getNextId();
         this.startTime = Instant.now();
         this.isAssigned = true;
     }
@@ -25,5 +29,13 @@ public class Task {
 
     public void setAssigned(boolean assigned) {
         isAssigned = assigned;
+    }
+
+    public int getId() {
+        return id;
+    }
+
+    private static int getNextId() {
+        return idGenerator++;
     }
 }

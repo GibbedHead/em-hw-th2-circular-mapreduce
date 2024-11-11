@@ -3,6 +3,7 @@ package ru.chaplyginma.manager;
 import ru.chaplyginma.task.MapTask;
 import ru.chaplyginma.task.MapTaskResult;
 import ru.chaplyginma.task.ReduceTask;
+import ru.chaplyginma.task.Task;
 
 import java.util.Comparator;
 import java.util.Map;
@@ -19,12 +20,9 @@ public class Manager extends Thread {
     private final Set<String> files;
     private final int numReduceTasks;
 
-    private final BlockingQueue<MapTask> mapTaskQueue = new LinkedBlockingQueue<>();
-    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
-    private final Map<MapTask, ScheduledFuture<?>> mapTaskScheduledFutures = new ConcurrentHashMap<>();
-
-    private final BlockingQueue<ReduceTask> reduceTaskQueue = new LinkedBlockingQueue<>();
-    private final Lock reduceTaskLock = new ReentrantLock();
+    private final BlockingQueue<Task> taskQueue = new LinkedBlockingQueue<>();
+    private final ScheduledExecutorService timeoutScheduler = Executors.newScheduledThreadPool(1);
+    private final Map<Task, ScheduledFuture<?>> taskScheduledFutures = new ConcurrentHashMap<>();
 
     private final CountDownLatch mapLatch;
     private final Lock lock = new ReentrantLock();
@@ -52,44 +50,31 @@ public class Manager extends Thread {
         finish();
     }
 
-    public MapTask getNextMapTask(Thread thread) throws InterruptedException {
+    public Task getNextMapTask(Thread thread) throws InterruptedException {
         lock.lock();
         System.out.println(thread.getName() + ": getNextMapTask");
         try {
-            if (mapTaskScheduledFutures.isEmpty() && mapTaskQueue.isEmpty()) {
+            if (taskScheduledFutures.isEmpty() && taskQueue.isEmpty()) {
                 return null;
             }
 
-            while (!mapTaskScheduledFutures.isEmpty() && mapTaskQueue.isEmpty()) {
+            while (!taskScheduledFutures.isEmpty() && taskQueue.isEmpty()) {
                 System.out.println(thread.getName() + " waiting for map tasks...");
                 rescheduledCondition.await();
                 System.out.println(thread.getName() + " rescheduled.");
             }
 
-            final MapTask task = mapTaskQueue.poll(1, TimeUnit.MILLISECONDS);
+            final Task task = taskQueue.poll(1, TimeUnit.MILLISECONDS);
             if (task == null) {
                 return null;
             }
             System.out.println("task " + task.getId() + " taken. remaining tasks");
-            System.out.println(mapTaskQueue);
+            System.out.println(taskQueue);
             task.start();
             scheduleMapTimeout(task);
             return task;
         } finally {
             lock.unlock();
-        }
-    }
-
-    public ReduceTask getNextReduceTask(Thread thread) throws InterruptedException {
-        reduceTaskLock.lock();
-        try {
-            final ReduceTask task = reduceTaskQueue.poll(1, TimeUnit.MILLISECONDS);
-            if (task == null) {
-                return null;
-            }
-            return task;
-        } finally {
-            reduceTaskLock.unlock();
         }
     }
 
@@ -100,7 +85,7 @@ public class Manager extends Thread {
                 rescheduledCondition.signalAll();
                 return;
             }
-            ScheduledFuture<?> scheduledFuture = mapTaskScheduledFutures.remove(task);
+            ScheduledFuture<?> scheduledFuture = taskScheduledFutures.remove(task);
             if (scheduledFuture != null) {
                 scheduledFuture.cancel(false); // Отменяем таймер выполнения
             }
@@ -115,26 +100,24 @@ public class Manager extends Thread {
     }
 
     private void createMapTasks() {
-        int taskId = 1;
         for (String file : files) {
             MapTask mapTask = new MapTask(
-                    taskId++,
                     file,
                     numReduceTasks
             );
-            mapTaskQueue.add(mapTask);
+            taskQueue.add(mapTask);
         }
     }
 
     private void createReduceTasks() {
         for (int i = 0; i < numReduceTasks; i++) {
             ReduceTask reduceTask = new ReduceTask(i, resultMap.values());
-            reduceTaskQueue.add(reduceTask);
+            taskQueue.add(reduceTask);
         }
     }
 
-    private void scheduleMapTimeout(MapTask task) {
-        if (scheduler.isShutdown() || scheduler.isTerminated()) {
+    private void scheduleMapTimeout(Task task) {
+        if (timeoutScheduler.isShutdown() || timeoutScheduler.isTerminated()) {
             System.out.println("Scheduler is shutting down, task " + task.getId() + " cannot be scheduled.");
             return; // Do not schedule the timeout
         }
@@ -144,13 +127,13 @@ public class Manager extends Thread {
             try {
                 // Проверяем, истек ли таймаут выполнения
                 if (task.isAssigned() && task.isExpired(WORKER_TIMEOUT_MILLISECONDS, TimeUnit.MILLISECONDS)) {
-                    mapTaskScheduledFutures.remove(task);
+                    taskScheduledFutures.remove(task);
                     if (resultMap.containsKey(task)) {
                         return;
                     }
-                    mapTaskQueue.offer(task); // Возвращаем задачу в очередь
+                    taskQueue.offer(task); // Возвращаем задачу в очередь
                     System.out.println("Map task " + task.getId() + " returned to queue due to timeout");
-                    System.out.println(mapTaskQueue);
+                    System.out.println(taskQueue);
                     // Удаляем таймер
                     rescheduledCondition.signal();
                     task.setAssigned(false);
@@ -161,9 +144,9 @@ public class Manager extends Thread {
             }
         };
 
-        mapTaskScheduledFutures.put(
+        taskScheduledFutures.put(
                 task,
-                scheduler.schedule(
+                timeoutScheduler.schedule(
                         timeoutHandler,
                         WORKER_TIMEOUT_MILLISECONDS,
                         TimeUnit.MILLISECONDS)
@@ -175,11 +158,11 @@ public class Manager extends Thread {
         System.out.println("Results number: " + resultMap.size());
         System.out.println(resultMap);
         System.out.println("-------------------------------");
-        System.out.println(mapTaskQueue);
-        System.out.println(mapTaskScheduledFutures);
+        System.out.println(taskQueue);
+        System.out.println(taskScheduledFutures);
         System.out.println("Clearing map queue");
-        mapTaskQueue.clear();
-        scheduler.shutdown();
+        taskQueue.clear();
+        timeoutScheduler.shutdown();
         lock.lock();
         try {
             rescheduledCondition.signalAll();
