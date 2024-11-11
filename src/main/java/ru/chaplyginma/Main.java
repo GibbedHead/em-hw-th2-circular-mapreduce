@@ -13,7 +13,7 @@ import java.util.Set;
 
 public class Main {
     public static void main(String[] args) {
-        final int numWorkers = 10;
+        final int numWorkers = 50;
         final int numReduceTasks = 3;
 
         try {

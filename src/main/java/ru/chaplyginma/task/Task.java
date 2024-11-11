@@ -22,4 +22,8 @@ public class Task {
     public boolean isAssigned() {
         return isAssigned;
     }
+
+    public void setAssigned(boolean assigned) {
+        isAssigned = assigned;
+    }
 }

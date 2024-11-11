@@ -2,8 +2,7 @@ package ru.chaplyginma.manager;
 
 import ru.chaplyginma.task.MapTask;
 
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
@@ -23,6 +22,8 @@ public class Manager extends Thread {
     private final Lock lock = new ReentrantLock();
     private final Condition rescheduledCondition = lock.newCondition();
 
+    private final Map<MapTask, String> resultMap = new ConcurrentSkipListMap<>(Comparator.comparingInt(MapTask::getId));
+
     public Manager(Set<String> files, int numReduceTasks) {
         this.files = files;
         this.mapLatch = new CountDownLatch(files.size());
@@ -35,31 +36,43 @@ public class Manager extends Thread {
         createMapTasks();
         try {
             mapLatch.await();
+            System.out.println("-------------------------------");
+            System.out.println("Results number: " + resultMap.size());
+            System.out.println(resultMap);
+            System.out.println("-------------------------------");
+            System.out.println(mapTaskQueue);
+            System.out.println(mapTaskScheduledFutures);
+            System.out.println("Clearing map queue");
+            mapTaskQueue.clear();
+
         } catch (InterruptedException e) {
             interrupt();
             System.out.println("Map tasks manager work interrupted. Exception: " + e.getMessage());
         }
-        System.out.println(mapLatch.getCount());
+        scheduler.shutdown();
         System.out.println("Manager finished.");
     }
 
     public MapTask getNextMapTask(Thread thread) throws InterruptedException {
         lock.lock();
+        System.out.println(thread.getName() + ": getNextMapTask");
         try {
             if (mapTaskScheduledFutures.isEmpty() && mapTaskQueue.isEmpty()) {
                 return null;
             }
 
             while (!mapTaskScheduledFutures.isEmpty() && mapTaskQueue.isEmpty()) {
-                System.out.println(thread.getName() +  ": Waiting for map tasks to be scheduled");
+                System.out.println(thread.getName() + " waiting for map tasks...");
                 rescheduledCondition.await();
-                System.out.println(thread.getName() +  ": Rescheduled");
+                System.out.println(thread.getName() + " rescheduled.");
             }
 
             final MapTask task = mapTaskQueue.poll(1, TimeUnit.MILLISECONDS);
             if (task == null) {
                 return null;
             }
+            System.out.println("task " + task.getId() + " taken. remaining tasks");
+            System.out.println(mapTaskQueue);
             task.start();
             scheduleMapTimeout(task);
             return task;
@@ -68,16 +81,22 @@ public class Manager extends Thread {
         }
     }
 
-    public void completeMapTask(MapTask task) {
+    public void completeMapTask(MapTask task, String result) {
         lock.lock();
         try {
+            if (resultMap.containsKey(task)) {
+                rescheduledCondition.signalAll();
+                return;
+            }
             ScheduledFuture<?> scheduledFuture = mapTaskScheduledFutures.remove(task);
             if (scheduledFuture != null) {
                 scheduledFuture.cancel(false); // Отменяем таймер выполнения
             }
+            resultMap.put(task, result);
             mapLatch.countDown();
+            rescheduledCondition.signal();
             System.out.println("Map task " + task + " completed.");
-            rescheduledCondition.signalAll();
+
         } finally {
             lock.unlock();
         }
@@ -96,14 +115,26 @@ public class Manager extends Thread {
     }
 
     private void scheduleMapTimeout(MapTask task) {
+        if (scheduler.isShutdown() || scheduler.isTerminated()) {
+            System.out.println("Scheduler is shutting down, task " + task.getId() + " cannot be scheduled.");
+            return; // Do not schedule the timeout
+        }
+
         Runnable timeoutHandler = () -> {
             lock.lock();
             try {
                 // Проверяем, истек ли таймаут выполнения
                 if (task.isAssigned() && task.isExpired(WORKER_TIMEOUT_MILLISECONDS, TimeUnit.MILLISECONDS)) {
+                    mapTaskScheduledFutures.remove(task);
+                    if (resultMap.containsKey(task)) {
+                        return;
+                    }
                     mapTaskQueue.offer(task); // Возвращаем задачу в очередь
-                    mapTaskScheduledFutures.remove(task); // Удаляем таймер
-                    rescheduledCondition.signalAll();
+                    System.out.println("Map task " + task.getId() + " returned to queue due to timeout");
+                    System.out.println(mapTaskQueue);
+                     // Удаляем таймер
+                    rescheduledCondition.signal();
+                    task.setAssigned(false);
                     System.out.println("Task " + task.getId() + " timed out");
                 }
             } finally {
