@@ -2,6 +2,7 @@ package ru.chaplyginma.manager;
 
 import ru.chaplyginma.task.MapTask;
 import ru.chaplyginma.task.MapTaskResult;
+import ru.chaplyginma.task.ReduceTask;
 
 import java.util.Comparator;
 import java.util.Map;
@@ -21,6 +22,10 @@ public class Manager extends Thread {
     private final BlockingQueue<MapTask> mapTaskQueue = new LinkedBlockingQueue<>();
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
     private final Map<MapTask, ScheduledFuture<?>> mapTaskScheduledFutures = new ConcurrentHashMap<>();
+
+    private final BlockingQueue<ReduceTask> reduceTaskQueue = new LinkedBlockingQueue<>();
+    private final Lock reduceTaskLock = new ReentrantLock();
+
     private final CountDownLatch mapLatch;
     private final Lock lock = new ReentrantLock();
     private final Condition rescheduledCondition = lock.newCondition();
@@ -43,6 +48,7 @@ public class Manager extends Thread {
             interrupt();
             System.out.println("Map tasks manager work interrupted. Exception: " + e.getMessage());
         }
+        createReduceTasks();
         finish();
     }
 
@@ -71,6 +77,19 @@ public class Manager extends Thread {
             return task;
         } finally {
             lock.unlock();
+        }
+    }
+
+    public ReduceTask getNextReduceTask(Thread thread) throws InterruptedException {
+        reduceTaskLock.lock();
+        try {
+            final ReduceTask task = reduceTaskQueue.poll(1, TimeUnit.MILLISECONDS);
+            if (task == null) {
+                return null;
+            }
+            return task;
+        } finally {
+            reduceTaskLock.unlock();
         }
     }
 
@@ -104,6 +123,13 @@ public class Manager extends Thread {
                     numReduceTasks
             );
             mapTaskQueue.add(mapTask);
+        }
+    }
+
+    private void createReduceTasks() {
+        for (int i = 0; i < numReduceTasks; i++) {
+            ReduceTask reduceTask = new ReduceTask(i, resultMap.values());
+            reduceTaskQueue.add(reduceTask);
         }
     }
 

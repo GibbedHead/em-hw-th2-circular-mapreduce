@@ -4,6 +4,7 @@ import ru.chaplyginma.domain.KeyValue;
 import ru.chaplyginma.manager.Manager;
 import ru.chaplyginma.task.MapTask;
 import ru.chaplyginma.task.MapTaskResult;
+import ru.chaplyginma.task.ReduceTask;
 import ru.chaplyginma.util.FileUtil;
 
 import java.io.BufferedReader;
@@ -30,8 +31,9 @@ public class Worker extends Thread {
 
     @Override
     public void run() {
-        MapTask mapTask;
+
         try {
+            MapTask mapTask;
             mapTask = manager.getNextMapTask(Thread.currentThread());
             while (mapTask != null) {
                 System.out.println(getName() + ": starting map task on file " + mapTask.getFile());
@@ -44,11 +46,19 @@ public class Worker extends Thread {
                 }
                 mapTask = manager.getNextMapTask(Thread.currentThread());
             }
+            System.out.println(getName() + " finished maps");
+
+            ReduceTask reduceTask;
+            reduceTask = manager.getNextReduceTask(Thread.currentThread());
+            while (reduceTask != null) {
+                System.out.println(getName() + ": starting reduce task" + reduceTask.getId());
+                reduceTask = manager.getNextReduceTask(Thread.currentThread());
+            }
         } catch (InterruptedException e) {
             interrupt();
             System.out.println(getName() + " interrupted");
         }
-        System.out.println(getName() + " finished");
+
     }
 
     private List<KeyValue> map(String file) {
