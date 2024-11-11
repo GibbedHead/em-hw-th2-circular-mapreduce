@@ -36,21 +36,11 @@ public class Manager extends Thread {
         createMapTasks();
         try {
             mapLatch.await();
-            System.out.println("-------------------------------");
-            System.out.println("Results number: " + resultMap.size());
-            System.out.println(resultMap);
-            System.out.println("-------------------------------");
-            System.out.println(mapTaskQueue);
-            System.out.println(mapTaskScheduledFutures);
-            System.out.println("Clearing map queue");
-            mapTaskQueue.clear();
-
         } catch (InterruptedException e) {
             interrupt();
             System.out.println("Map tasks manager work interrupted. Exception: " + e.getMessage());
         }
-        scheduler.shutdown();
-        System.out.println("Manager finished.");
+        finish();
     }
 
     public MapTask getNextMapTask(Thread thread) throws InterruptedException {
@@ -149,6 +139,25 @@ public class Manager extends Thread {
                         WORKER_TIMEOUT_MILLISECONDS,
                         TimeUnit.MILLISECONDS)
         );
+    }
+
+    private void finish() {
+        System.out.println("-------------------------------");
+        System.out.println("Results number: " + resultMap.size());
+        System.out.println(resultMap);
+        System.out.println("-------------------------------");
+        System.out.println(mapTaskQueue);
+        System.out.println(mapTaskScheduledFutures);
+        System.out.println("Clearing map queue");
+        mapTaskQueue.clear();
+        scheduler.shutdown();
+        lock.lock();
+        try {
+            rescheduledCondition.signalAll();
+        } finally {
+            lock.unlock();
+        }
+        System.out.println("Manager finished.");
     }
 
 }
