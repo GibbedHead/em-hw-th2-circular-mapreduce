@@ -29,14 +29,14 @@ public class Worker extends Thread {
     public void run() throws IllegalStateException {
         try {
             Task task;
-            task = manager.getNextMapTask(Thread.currentThread());
+            task = manager.getTask(Thread.currentThread());
             while (task != null) {
                 switch (task) {
                     case MapTask mapTask -> executeMap(mapTask);
                     case ReduceTask reduceTask -> executeReduce(reduceTask);
                     default -> throw new IllegalStateException("Unexpected value type: " + task.getClass().getName());
                 }
-                task = manager.getNextMapTask(Thread.currentThread());
+                task = manager.getTask(Thread.currentThread());
             }
         } catch (InterruptedException e) {
             interrupt();
@@ -134,6 +134,7 @@ public class Worker extends Thread {
 
     private void executeReduce(ReduceTask reduceTask) {
         System.out.printf("%s starting reduce task %d%n", this.getName(), reduceTask.getId());
+        manager.completeReduceTask(reduceTask, Thread.currentThread());
     }
 
 

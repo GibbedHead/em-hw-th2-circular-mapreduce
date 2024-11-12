@@ -29,7 +29,8 @@ public class Manager extends Thread {
     private final Lock lock = new ReentrantLock();
     private final Condition rescheduledCondition = lock.newCondition();
 
-    private final Map<Task, MapTaskResult> resultMap = new ConcurrentSkipListMap<>(Comparator.comparingInt(Task::getId));
+    private final Map<Task, MapTaskResult> mapTasksResultMap = new ConcurrentSkipListMap<>(Comparator.comparingInt(Task::getId));
+    private final Map<Task, String> reduceTasksResultMap = new ConcurrentSkipListMap<>(Comparator.comparingInt(Task::getId));
 
     public Manager(Set<String> files, int numReduceTasks) {
         this.files = files;
@@ -43,15 +44,18 @@ public class Manager extends Thread {
     public void run() {
         createMapTasks();
         waitForMapTasksCompletion();
+
+        System.out.println("Map tasks completed");
+
         clearQueues();
 
-//        createReduceTasks();
-//        waitForReduceTasksCompletion();
+        createReduceTasks();
+        waitForReduceTasksCompletion();
 
         finish();
     }
 
-    public Task getNextMapTask(Thread thread) throws InterruptedException {
+    public Task getTask(Thread thread) throws InterruptedException {
         lock.lock();
         try {
             if (taskScheduledFutures.isEmpty() && taskQueue.isEmpty()) {
@@ -74,30 +78,33 @@ public class Manager extends Thread {
     }
 
     public void completeMapTask(MapTask task, MapTaskResult mapTaskResult, Thread thread) {
+        completeTask(task, mapTaskResult, thread, mapTasksResultMap, mapLatch, "Map");
+    }
+
+    public void completeReduceTask(ReduceTask task, Thread thread) {
+        completeTask(task, "Completed", thread, reduceTasksResultMap, reduceLatch, "Reduce");
+    }
+
+    private <T> void completeTask(Task task, T taskResult, Thread thread,
+                                  Map<Task, T> resultMap,
+                                  CountDownLatch latch,
+                                  String taskType) {
         lock.lock();
         try {
             if (resultMap.containsKey(task)) {
                 rescheduledCondition.signalAll();
                 return;
             }
+
             ScheduledFuture<?> scheduledFuture = taskScheduledFutures.remove(task);
             if (scheduledFuture != null) {
                 scheduledFuture.cancel(false);
             }
-            resultMap.put(task, mapTaskResult);
-            mapLatch.countDown();
-            rescheduledCondition.signal();
-            System.out.printf("Map task %d completed by %s.%n", task.getId(), thread.getName());
-        } finally {
-            lock.unlock();
-        }
-    }
 
-    public void completeReduceTask(ReduceTask task) {
-        lock.lock();
-        try {
-            System.out.println("Reduce task id=" + task.getId() + " completed");
-            reduceLatch.countDown();
+            resultMap.put(task, taskResult);
+            latch.countDown();
+            rescheduledCondition.signal();
+            System.out.printf("%s task %d completed by %s%n", taskType, task.getId(), thread.getName());
         } finally {
             lock.unlock();
         }
@@ -111,7 +118,7 @@ public class Manager extends Thread {
 
     private void createReduceTasks() {
         for (int i = 0; i < numReduceTasks; i++) {
-            taskQueue.add(new ReduceTask(i, resultMap.values()));
+            taskQueue.add(new ReduceTask(i, mapTasksResultMap.values()));
         }
     }
 
@@ -137,7 +144,7 @@ public class Manager extends Thread {
         try {
             if (task.isAssigned() && task.isExpired(WORKER_TIMEOUT_MILLISECONDS, TimeUnit.MILLISECONDS)) {
                 taskScheduledFutures.remove(task);
-                if (resultMap.containsKey(task)) {
+                if (mapTasksResultMap.containsKey(task)) {
                     return;
                 }
                 System.out.println("Map task " + task.getId() + " returned to queue due to timeout");
@@ -152,8 +159,8 @@ public class Manager extends Thread {
 
     private void finish() {
         System.out.println("-------------------------------");
-        System.out.println("Results number: " + resultMap.size());
-        System.out.println(resultMap);
+        System.out.println("Results number: " + mapTasksResultMap.size());
+        System.out.println(mapTasksResultMap);
         System.out.println("-------------------------------");
         timeoutScheduler.shutdown();
         System.out.println("Manager finished.");
