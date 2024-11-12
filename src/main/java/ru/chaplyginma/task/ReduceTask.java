@@ -1,18 +1,16 @@
 package ru.chaplyginma.task;
 
-import java.util.Collection;
+import java.util.Set;
 
 public class ReduceTask extends Task {
 
-    private final int id;
-    private final Collection<MapTaskResult> results;
+    private final Set<String> files;
 
-    public ReduceTask(int id, Collection<MapTaskResult> results) {
-        this.id = id;
-        this.results = results;
+    public ReduceTask(Set<String> files) {
+        this.files = files;
     }
 
-    public int getId() {
-        return id;
+    public Set<String> getFiles() {
+        return files;
     }
 }

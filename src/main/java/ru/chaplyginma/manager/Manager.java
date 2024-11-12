@@ -12,6 +12,7 @@ import java.util.concurrent.*;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.stream.Collectors;
 
 public class Manager extends Thread {
 
@@ -42,20 +43,25 @@ public class Manager extends Thread {
 
     @Override
     public void run() {
+        System.out.println("Manager: Started");
         createMapTasks();
         waitForMapTasksCompletion();
 
-        System.out.println("Map tasks completed");
+        System.out.println("Manager: Map tasks completed");
 
         clearQueues();
 
         createReduceTasks();
         waitForReduceTasksCompletion();
 
+        clearQueues();
+
+        System.out.println("Manager: Reduce tasks completed");
+
         finish();
     }
 
-    public Task getTask(Thread thread) throws InterruptedException {
+    public Task getTask() throws InterruptedException {
         lock.lock();
         try {
             if (taskScheduledFutures.isEmpty() && taskQueue.isEmpty()) {
@@ -78,11 +84,11 @@ public class Manager extends Thread {
     }
 
     public void completeMapTask(MapTask task, MapTaskResult mapTaskResult, Thread thread) {
-        completeTask(task, mapTaskResult, thread, mapTasksResultMap, mapLatch, "Map");
+        completeTask(task, mapTaskResult, thread, mapTasksResultMap, mapLatch, "map");
     }
 
     public void completeReduceTask(ReduceTask task, Thread thread) {
-        completeTask(task, "Completed", thread, reduceTasksResultMap, reduceLatch, "Reduce");
+        completeTask(task, "Completed", thread, reduceTasksResultMap, reduceLatch, "reduce");
     }
 
     private <T> void completeTask(Task task, T taskResult, Thread thread,
@@ -104,7 +110,7 @@ public class Manager extends Thread {
             resultMap.put(task, taskResult);
             latch.countDown();
             rescheduledCondition.signal();
-            System.out.printf("%s task %d completed by %s%n", taskType, task.getId(), thread.getName());
+            System.out.printf("%s: Completed %s task %d %n", thread.getName(), taskType, task.getId());
         } finally {
             lock.unlock();
         }
@@ -114,12 +120,23 @@ public class Manager extends Thread {
         for (String file : files) {
             taskQueue.add(new MapTask(file, numReduceTasks));
         }
+        System.out.printf("Manager: Map tasks created%n");
     }
 
     private void createReduceTasks() {
+        Task.resetGenerator();
         for (int i = 0; i < numReduceTasks; i++) {
-            taskQueue.add(new ReduceTask(i, mapTasksResultMap.values()));
+            taskQueue.add(new ReduceTask(getMapFilesByReduceId(i)));
         }
+        System.out.printf("Manager: Reduce tasks created%n");
+    }
+
+    private Set<String> getMapFilesByReduceId(int reduceId) {
+        String reduceIdPattern = "%d.txt".formatted(reduceId);
+        return mapTasksResultMap.values().stream()
+                .flatMap(mapTaskResult -> mapTaskResult.files().stream())
+                .filter(fileName -> fileName.endsWith(reduceIdPattern))
+                .collect(Collectors.toSet());
     }
 
     private void scheduleTimeout(Task task) {
@@ -158,18 +175,11 @@ public class Manager extends Thread {
     }
 
     private void finish() {
-        System.out.println("-------------------------------");
-        System.out.println("Results number: " + mapTasksResultMap.size());
-        System.out.println(mapTasksResultMap);
-        System.out.println("-------------------------------");
         timeoutScheduler.shutdown();
         System.out.println("Manager finished.");
     }
 
     private void clearQueues() {
-        System.out.println(taskQueue);
-        System.out.println(taskScheduledFutures);
-        System.out.println("Clearing map queue");
         taskQueue.clear();
         cancelScheduledTimeoutChecks();
 

@@ -40,4 +40,8 @@ public class Task {
     private static int getNextId() {
         return idGenerator++;
     }
+
+    public static void resetGenerator() {
+        idGenerator = 0;
+    }
 }

@@ -9,11 +9,15 @@ import ru.chaplyginma.task.Task;
 import ru.chaplyginma.util.FileUtil;
 
 import java.io.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.*;
 
 public class Worker extends Thread {
 
     private static final String NAME_TEMPLATE = "Worker_%d";
+    private static final String RESULT_FILE_NAME = "results.txt";
     private static int id = 1;
 
     private final String workDir;
@@ -27,26 +31,27 @@ public class Worker extends Thread {
 
     @Override
     public void run() throws IllegalStateException {
+        System.out.printf("%s: Started%n", this.getName());
         try {
             Task task;
-            task = manager.getTask(Thread.currentThread());
+            task = manager.getTask();
             while (task != null) {
                 switch (task) {
                     case MapTask mapTask -> executeMap(mapTask);
                     case ReduceTask reduceTask -> executeReduce(reduceTask);
                     default -> throw new IllegalStateException("Unexpected value type: " + task.getClass().getName());
                 }
-                task = manager.getTask(Thread.currentThread());
+                task = manager.getTask();
             }
         } catch (InterruptedException e) {
             interrupt();
-            System.err.printf("%s was interrupted%n", this.getName());
+            System.err.printf("%s: interrupted%n", this.getName());
         }
-
+        System.out.printf("%s: Finished%n", this.getName());
     }
 
     private void executeMap(MapTask mapTask) {
-        System.out.printf("%s starting map task %d%n", this.getName(), mapTask.getId());
+        System.out.printf("%s: Starting map task %d%n", this.getName(), mapTask.getId());
         List<KeyValue> keyValues = map(mapTask.getFile());
         if (keyValues != null) {
             MapTaskResult mapTaskResult = new MapTaskResult(new HashSet<>());
@@ -67,7 +72,7 @@ public class Worker extends Thread {
                 }
             }
         } catch (IOException e) {
-            System.err.printf("Error reading input file `%s`: %s%n", file, e.getMessage());
+            System.err.printf("%s: Error reading input file `%s`: %s%n", this.getName(), file, e.getMessage());
             return null;
         }
         return result;
@@ -93,7 +98,7 @@ public class Worker extends Thread {
                 }
             }
         } catch (IOException e) {
-            System.out.printf("Error write intermediate files `%s`: %s%n", taskDir, e.getMessage());
+            System.out.printf("%s: Error write intermediate files `%s`: %s%n", getName(), taskDir, e.getMessage());
         } finally {
             closeWriters(writers);
         }
@@ -108,34 +113,86 @@ public class Worker extends Thread {
         return reduceTaskId;
     }
 
-    private static BufferedWriter getWriter(Map<Integer, BufferedWriter> writers, int reduceTaskId, String fileName) {
+    private BufferedWriter getWriter(Map<Integer, BufferedWriter> writers, int reduceTaskId, String fileName) {
         return writers.computeIfAbsent(reduceTaskId, k -> {
             try {
                 return new BufferedWriter(new FileWriter(fileName, true));
             } catch (IOException e) {
-                System.err.printf("Error opening file `%s`: %s%n ", fileName, e.getMessage());
+                System.err.printf("%s: Error opening file `%s`: %s%n ", getName(), fileName, e.getMessage());
                 return null;
             }
         });
     }
 
-    private static void closeWriters(Map<Integer, BufferedWriter> writers) {
+    private void closeWriters(Map<Integer, BufferedWriter> writers) {
         writers.values().stream()
                 .filter(Objects::nonNull)
                 .forEach(writer -> {
                     try {
                         writer.close();
                     } catch (IOException e) {
-                        System.err.printf("Error closing writer for file: %s%n", e.getMessage());
+                        System.err.printf("%s: Error closing writer for file: %s%n", getName(), e.getMessage());
                     }
                 });
     }
 
 
     private void executeReduce(ReduceTask reduceTask) {
-        System.out.printf("%s starting reduce task %d%n", this.getName(), reduceTask.getId());
+        System.out.printf("%s: Starting reduce task %d%n", this.getName(), reduceTask.getId());
+
+        Map<String, List<String>> reduceMap = fillReduceMap(reduceTask);
+
+        List<String> result = getResult(reduceMap);
+
+        writeResultFile(result);
+
         manager.completeReduceTask(reduceTask, Thread.currentThread());
     }
 
+    private List<String> getResult(Map<String, List<String>> reduceMap) {
+        List<String> result = new ArrayList<>();
+        for (Map.Entry<String, List<String>> entry : reduceMap.entrySet()) {
+            String key = entry.getKey();
+            List<String> values = entry.getValue();
+            result.add(reduce(key, values));
+        }
+        return result;
+    }
 
+    private Map<String, List<String>> fillReduceMap(ReduceTask reduceTask) {
+        Map<String, List<String>> reduceMap = new HashMap<>();
+        for (String fileName : reduceTask.getFiles()) {
+            try (BufferedReader br = new BufferedReader(new FileReader(fileName))) {
+                String line;
+                while ((line = br.readLine()) != null) {
+                    if (!line.isBlank()) {
+                        String[] words = line.split("\\t");
+                        if (words.length == 2) {
+                            reduceMap.computeIfAbsent(words[0], k -> new ArrayList<>()).add(words[1]);
+                        } else {
+                            System.out.printf("%s: Invalid line `%s`", getName(), line);
+                        }
+                    }
+                }
+            } catch (IOException e) {
+                System.err.printf("%s: Error reading file `%s`: %s%n", getName(), fileName, e.getMessage());
+            }
+        }
+        return reduceMap;
+    }
+
+    private String reduce(String key, List<String> values) {
+        return "%s\t%d".formatted(key, values.size());
+    }
+
+    private void writeResultFile(List<String> result) {
+        String fileName = "%s/%s".formatted(workDir, RESULT_FILE_NAME);
+        Path filePath = Paths.get(fileName);
+
+        try {
+            Files.write(filePath, result);
+        } catch (IOException e) {
+            System.err.printf("%s: Error writing result file `%s`: %s%n", getName(), fileName, e.getMessage());
+        }
+    }
 }

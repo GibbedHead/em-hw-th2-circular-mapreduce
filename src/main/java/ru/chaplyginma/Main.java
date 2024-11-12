@@ -8,14 +8,11 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 
 public class Main {
     public static void main(String[] args) {
-        final int numWorkers = 4;
+        final int numWorkers = 10;
         final int numReduceTasks = 7;
         final String workDir = "result";
 
@@ -37,7 +34,6 @@ public class Main {
             for (Worker worker : workers) {
                 worker.join();
             }
-            System.out.println("-------");
         } catch (IOException e) {
             System.out.println("Can't load files: " + e.getMessage());
             throw new RuntimeException(e);
