@@ -31,7 +31,7 @@ public class Manager extends Thread {
     private final Map<Task, ScheduledFuture<?>> timeoutFutures = new ConcurrentHashMap<>();
     private final CountDownLatch mapLatch;
     private final CountDownLatch reduceLatch;
-    private final Lock lock = new ReentrantLock();
+    private final Lock completeTasklock = new ReentrantLock();
     private final Map<Task, MapTaskResult> mapResults = new ConcurrentHashMap<>();
     private final Map<Task, ReduceTaskResult> reduceResults = new ConcurrentHashMap<>();
     private final Logger logger = LoggerFactory.getLogger(Manager.class);
@@ -109,7 +109,7 @@ public class Manager extends Thread {
                                   Map<Task, T> resultMap,
                                   CountDownLatch latch,
                                   String taskType) {
-        lock.lock();
+        completeTasklock.lock();
         try {
             if (resultMap.containsKey(task)) {
                 return;
@@ -124,7 +124,7 @@ public class Manager extends Thread {
             latch.countDown();
             logger.info("Completed {} task {} ", taskType, task.getId());
         } finally {
-            lock.unlock();
+            completeTasklock.unlock();
         }
     }
 
@@ -168,21 +168,16 @@ public class Manager extends Thread {
     }
 
     private void checkTaskTimeout(Task task) {
-        lock.lock();
-        try {
-            if (task.isAssigned() && task.isExpired(WORKER_TIMEOUT_MILLISECONDS, TimeUnit.MILLISECONDS)) {
-                timeoutFutures.remove(task);
-                if (mapResults.containsKey(task)) {
-                    return;
-                }
-                logger.info("Map task {} returned to queue due to timeout", task.getId());
-                if (!taskQueue.offer(task)) {
-                    logger.error("Cannot return timed out task {} to queue", task.getId());
-                }
-                task.setAssigned(false);
+        if (task.isAssigned() && task.isExpired(WORKER_TIMEOUT_MILLISECONDS, TimeUnit.MILLISECONDS)) {
+            timeoutFutures.remove(task);
+            if (mapResults.containsKey(task)) {
+                return;
             }
-        } finally {
-            lock.unlock();
+            logger.info("Map task {} returned to queue due to timeout", task.getId());
+            if (!taskQueue.offer(task)) {
+                logger.error("Cannot return timed out task {} to queue", task.getId());
+            }
+            task.setAssigned(false);
         }
     }
 
