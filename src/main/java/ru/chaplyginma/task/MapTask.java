@@ -17,11 +17,4 @@ public class MapTask extends Task {
     public int getNumReduceTasks() {
         return numReduceTasks;
     }
-
-    @Override
-    public String toString() {
-        return "MapTask{" +
-                "id=" + getId() +
-                '}';
-    }
 }

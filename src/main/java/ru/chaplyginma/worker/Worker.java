@@ -13,6 +13,8 @@ import java.util.*;
 public class Worker extends Thread {
 
     private static final String NAME_TEMPLATE = "Worker_%d";
+    private static final String MAPS_SPLIT_REGEX = "\\P{L}+";
+    private static final String INTERMEDIATE_FILE_SPLIT_REGEX = "\\t";
     private static int id = 1;
 
     private final String workDir;
@@ -62,9 +64,7 @@ public class Worker extends Thread {
         logger.info("{} starting map task {}", this.getName(), mapTask.getId());
         List<KeyValue> keyValues = map(mapTask.getFile());
         if (!keyValues.isEmpty()) {
-            MapTaskResult mapTaskResult = new MapTaskResult(new HashSet<>());
-
-            writeIntermediateFiles(keyValues, mapTask.getId(), mapTask.getNumReduceTasks(), mapTaskResult);
+            MapTaskResult mapTaskResult = writeIntermediateFiles(keyValues, mapTask.getId(), mapTask.getNumReduceTasks());
 
             manager.completeMapTask(mapTask, mapTaskResult);
         }
@@ -75,7 +75,7 @@ public class Worker extends Thread {
         try (BufferedReader br = new BufferedReader(new FileReader(file))) {
             String line;
             while ((line = br.readLine()) != null) {
-                for (String word : line.split("\\P{L}+")) {
+                for (String word : line.split(MAPS_SPLIT_REGEX)) {
                     if (!word.isBlank()) {
                         result.add(new KeyValue(word.toLowerCase(), "1"));
                     }
@@ -87,10 +87,11 @@ public class Worker extends Thread {
         return result;
     }
 
-    private void writeIntermediateFiles(List<KeyValue> keyValues,
-                                        int taskId,
-                                        int numReduceTasks,
-                                        MapTaskResult mapTaskResult) {
+    private MapTaskResult writeIntermediateFiles(List<KeyValue> keyValues,
+                                                 int taskId,
+                                                 int numReduceTasks) {
+        MapTaskResult mapTaskResult = new MapTaskResult(new HashSet<>());
+
         String taskDir = "%s/%s/%d".formatted(workDir, getName(), taskId);
         FileUtil.createDirectory(taskDir);
 
@@ -113,6 +114,7 @@ public class Worker extends Thread {
         } finally {
             closeWriters(writers);
         }
+        return mapTaskResult;
     }
 
     private BufferedWriter getWriter(Map<Integer, BufferedWriter> writers, int reduceTaskId, String fileName) {
@@ -180,7 +182,7 @@ public class Worker extends Thread {
 
     private void processLine(Map<String, List<String>> reduceMap, String line) {
         if (!line.isBlank()) {
-            String[] words = line.split("\\t");
+            String[] words = line.split(INTERMEDIATE_FILE_SPLIT_REGEX);
             if (words.length == 2) {
                 reduceMap.computeIfAbsent(words[0], k -> new ArrayList<>()).add(words[1]);
             } else {

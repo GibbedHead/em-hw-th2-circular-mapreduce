@@ -1,10 +1,15 @@
 package ru.chaplyginma.util;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 
 public class FileUtil {
+
+    private static final Logger logger = LoggerFactory.getLogger(FileUtil.class);
 
     private FileUtil() {
     }
@@ -15,7 +20,7 @@ public class FileUtil {
         if (!directory.exists()) {
             boolean created = directory.mkdirs();
             if (!created) {
-                System.out.println("Не удалось создать директорию " + directoryPath);
+                logger.error("Cannot create directory {}", directoryPath);
             }
         }
     }
@@ -30,7 +35,7 @@ public class FileUtil {
                 try {
                     Files.delete(file.toPath());
                 } catch (IOException e) {
-                    System.out.println("Не удалось удалить: " + file.getAbsolutePath());
+                    logger.error("Cannot delete file {}", file.getAbsolutePath());
                 }
             }
         }
