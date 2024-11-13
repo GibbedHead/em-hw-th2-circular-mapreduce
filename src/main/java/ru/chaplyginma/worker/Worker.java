@@ -9,13 +9,14 @@ import ru.chaplyginma.util.FileUtil;
 
 import java.io.*;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class Worker extends Thread {
 
     private static final String NAME_TEMPLATE = "Worker_%d";
     private static final String MAPS_SPLIT_REGEX = "\\P{L}+";
     private static final String INTERMEDIATE_FILE_SPLIT_REGEX = "\\t";
-    private static int id = 1;
+    private static final AtomicInteger id = new AtomicInteger(1);
 
     private final String workDir;
     private final Manager manager;
@@ -23,7 +24,7 @@ public class Worker extends Thread {
 
     public Worker(Manager manager, String workDir) {
         this.workDir = workDir;
-        this.setName(NAME_TEMPLATE.formatted(id++));
+        this.setName(NAME_TEMPLATE.formatted(id.getAndIncrement()));
         this.manager = manager;
     }
 
@@ -181,8 +182,7 @@ public class Worker extends Thread {
             if (words.length == 2) {
                 reduceMap.computeIfAbsent(words[0], k -> new ArrayList<>()).add(words[1]);
             } else {
-                System.out.printf("%s: Invalid line `%s`%n", getName(), line);
-                logger.warn("{} invalid line `{}`", getName(), line);
+                logger.warn("{} invalid line `{}`. Should be 'word' + {} + 'number'", getName(), line, INTERMEDIATE_FILE_SPLIT_REGEX);
             }
         }
     }

@@ -2,10 +2,11 @@ package ru.chaplyginma.task;
 
 import java.time.Instant;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class Task {
 
-    private static int idGenerator = 0;
+    private static final AtomicInteger idGenerator = new AtomicInteger(0);
 
     private final int id;
     private Instant startTime;
@@ -16,11 +17,11 @@ public class Task {
     }
 
     private static int getNextId() {
-        return idGenerator++;
+        return idGenerator.getAndIncrement();
     }
 
     public static void resetGenerator() {
-        idGenerator = 0;
+        idGenerator.set(0);
     }
 
     public void start() {
