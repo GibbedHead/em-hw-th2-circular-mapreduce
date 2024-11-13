@@ -8,6 +8,9 @@ import ru.chaplyginma.task.*;
 import ru.chaplyginma.util.FileUtil;
 
 import java.io.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -166,6 +169,11 @@ public class Worker extends Thread {
     }
 
     private void processFile(String fileName, Map<String, List<String>> reduceMap) {
+        if (!validFile(fileName)) {
+            logger.error("{} file {} not exists or is not regular file", getName(), fileName);
+            return;
+        }
+
         try (BufferedReader br = new BufferedReader(new FileReader(fileName))) {
             String line;
             while ((line = br.readLine()) != null) {
@@ -174,6 +182,11 @@ public class Worker extends Thread {
         } catch (IOException e) {
             logger.error("{} error reading intermediate file {}", getName(), fileName, e);
         }
+    }
+
+    private boolean validFile(String fileName) {
+        Path path = Paths.get(fileName);
+        return Files.exists(path) && Files.isRegularFile(path);
     }
 
     private void processLine(Map<String, List<String>> reduceMap, String line) {
