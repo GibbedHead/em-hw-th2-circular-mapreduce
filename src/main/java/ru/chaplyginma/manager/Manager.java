@@ -70,13 +70,16 @@ public class Manager extends Thread {
 
     public Task getTask() throws InterruptedException {
         final Task task = taskQueue.poll(1, TimeUnit.MILLISECONDS);
-        if (task != null) {
-            if (isTaskCompleted(task)) {
-                return null;
-            }
-            task.start();
-            scheduleTimeout(task);
+
+        if (task == null) {
+            return null;
         }
+
+        if (isTaskCompleted(task)) {
+            return null;
+        }
+
+        initializeTask(task);
         return task;
     }
 
@@ -94,6 +97,11 @@ public class Manager extends Thread {
 
     private boolean isTaskCompleted(Task task) {
         return mapResults.containsKey(task) || reduceResults.containsKey(task);
+    }
+
+    private void initializeTask(Task task) {
+        task.start();
+        scheduleTimeout(task);
     }
 
     private <T> void completeTask(Task task,
