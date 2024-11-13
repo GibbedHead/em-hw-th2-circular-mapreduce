@@ -2,22 +2,15 @@ package ru.chaplyginma.worker;
 
 import ru.chaplyginma.domain.KeyValue;
 import ru.chaplyginma.manager.Manager;
-import ru.chaplyginma.task.MapTask;
-import ru.chaplyginma.task.MapTaskResult;
-import ru.chaplyginma.task.ReduceTask;
-import ru.chaplyginma.task.Task;
+import ru.chaplyginma.task.*;
 import ru.chaplyginma.util.FileUtil;
 
 import java.io.*;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.*;
 
 public class Worker extends Thread {
 
     private static final String NAME_TEMPLATE = "Worker_%d";
-    private static final String RESULT_FILE_NAME = "results.txt";
     private static int id = 1;
 
     private final String workDir;
@@ -32,21 +25,23 @@ public class Worker extends Thread {
     @Override
     public void run() throws IllegalStateException {
         System.out.printf("%s: Started%n", this.getName());
-        try {
-            Task task;
-            task = manager.getTask();
-            while (task != null) {
-                switch (task) {
-                    case MapTask mapTask -> executeMap(mapTask);
-                    case ReduceTask reduceTask -> executeReduce(reduceTask);
-                    default -> throw new IllegalStateException("Unexpected value type: " + task.getClass().getName());
+
+        while (manager.isWorking()) {
+            try {
+                Task task = manager.getTask(Thread.currentThread());
+                if (task != null) {
+                    switch (task) {
+                        case MapTask mapTask -> executeMap(mapTask);
+                        case ReduceTask reduceTask -> executeReduce(reduceTask);
+                        default -> throw new IllegalStateException("Unexpected value type: " + task.getClass().getName());
+                    }
                 }
-                task = manager.getTask();
+            } catch (InterruptedException e) {
+                interrupt();
+                System.err.printf("%s: interrupted%n", this.getName());
             }
-        } catch (InterruptedException e) {
-            interrupt();
-            System.err.printf("%s: interrupted%n", this.getName());
         }
+
         System.out.printf("%s: Finished%n", this.getName());
     }
 
@@ -78,7 +73,10 @@ public class Worker extends Thread {
         return result;
     }
 
-    private void writeIntermediateFiles(List<KeyValue> keyValues, int taskId, int numReduceTasks, MapTaskResult mapTaskResult) {
+    private void writeIntermediateFiles(List<KeyValue> keyValues,
+                                        int taskId,
+                                        int numReduceTasks,
+                                        MapTaskResult mapTaskResult) {
         String taskDir = "%s/%s/%d".formatted(workDir, getName(), taskId);
         FileUtil.createDirectory(taskDir);
 
@@ -87,10 +85,9 @@ public class Worker extends Thread {
         try {
             for (KeyValue keyValue : keyValues) {
                 int reduceTaskId = getReduceTaskId(numReduceTasks, keyValue);
-                String fileName = "%s/mr-%d-%d.txt".formatted(taskDir, taskId, getReduceTaskId(numReduceTasks, keyValue));
+                String fileName = "%s/mr-%d-%d.txt".formatted(taskDir, taskId, reduceTaskId);
 
                 BufferedWriter writer = getWriter(writers, reduceTaskId, fileName);
-
                 if (writer != null) {
                     writer.write(keyValue.toString());
                     writer.newLine();
@@ -142,15 +139,13 @@ public class Worker extends Thread {
 
         Map<String, List<String>> reduceMap = fillReduceMap(reduceTask);
 
-        List<String> result = getResult(reduceMap);
+        ReduceTaskResult result = new ReduceTaskResult(getResult(reduceMap));
 
-        writeResultFile(result);
-
-        manager.completeReduceTask(reduceTask, Thread.currentThread());
+        manager.completeReduceTask(reduceTask, result, Thread.currentThread());
     }
 
-    private List<String> getResult(Map<String, List<String>> reduceMap) {
-        List<String> result = new ArrayList<>();
+    private Set<KeyValue> getResult(Map<String, List<String>> reduceMap) {
+        Set<KeyValue> result = new HashSet<>();
         for (Map.Entry<String, List<String>> entry : reduceMap.entrySet()) {
             String key = entry.getKey();
             List<String> values = entry.getValue();
@@ -168,9 +163,12 @@ public class Worker extends Thread {
                     if (!line.isBlank()) {
                         String[] words = line.split("\\t");
                         if (words.length == 2) {
+                            if (words[0].equals("sam")) {
+                                System.out.printf("sam found during task %d in file %s%n", reduceTask.getId(), fileName);
+                            }
                             reduceMap.computeIfAbsent(words[0], k -> new ArrayList<>()).add(words[1]);
                         } else {
-                            System.out.printf("%s: Invalid line `%s`", getName(), line);
+                            System.out.printf("%s: Invalid line `%s`%n", getName(), line);
                         }
                     }
                 }
@@ -181,18 +179,8 @@ public class Worker extends Thread {
         return reduceMap;
     }
 
-    private String reduce(String key, List<String> values) {
-        return "%s\t%d".formatted(key, values.size());
+    private KeyValue reduce(String key, List<String> values) {
+        return new KeyValue(key, String.valueOf(values.size()));
     }
 
-    private void writeResultFile(List<String> result) {
-        String fileName = "%s/%s".formatted(workDir, RESULT_FILE_NAME);
-        Path filePath = Paths.get(fileName);
-
-        try {
-            Files.write(filePath, result);
-        } catch (IOException e) {
-            System.err.printf("%s: Error writing result file `%s`: %s%n", getName(), fileName, e.getMessage());
-        }
-    }
 }

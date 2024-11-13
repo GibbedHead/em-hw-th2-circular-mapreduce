@@ -13,13 +13,13 @@ import java.util.*;
 public class Main {
     public static void main(String[] args) {
         final int numWorkers = 10;
-        final int numReduceTasks = 7;
+        final int numReduceTasks = 1;
         final String workDir = "result";
 
         FileUtil.clearDirectory(new File(workDir));
 
         try {
-            Manager manager = new Manager(loadFileNames(), numReduceTasks);
+            Manager manager = new Manager(loadFileNames(), numReduceTasks, workDir);
             manager.start();
 
             List<Worker> workers = new ArrayList<>(numWorkers);

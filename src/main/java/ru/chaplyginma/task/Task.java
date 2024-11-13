@@ -9,7 +9,7 @@ public class Task {
 
     private final int id;
     private Instant startTime;
-    private boolean isAssigned;
+    private volatile boolean isAssigned;
 
     public Task() {
         this.id = getNextId();
