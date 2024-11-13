@@ -1,5 +1,7 @@
 package ru.chaplyginma.worker;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.chaplyginma.domain.KeyValue;
 import ru.chaplyginma.manager.Manager;
 import ru.chaplyginma.task.*;
@@ -15,6 +17,7 @@ public class Worker extends Thread {
 
     private final String workDir;
     private final Manager manager;
+    private final Logger logger = LoggerFactory.getLogger(Worker.class);
 
     public Worker(Manager manager, String workDir) {
         this.workDir = workDir;
@@ -33,11 +36,11 @@ public class Worker extends Thread {
 
     @Override
     public void run() throws IllegalStateException {
-        System.out.printf("%s: Started%n", this.getName());
+        logger.info("{} worker started", getName());
 
         while (manager.isWorking()) {
             try {
-                Task task = manager.getTask(Thread.currentThread());
+                Task task = manager.getTask();
                 if (task != null) {
                     switch (task) {
                         case MapTask mapTask -> executeMap(mapTask);
@@ -48,22 +51,22 @@ public class Worker extends Thread {
                 }
             } catch (InterruptedException e) {
                 interrupt();
-                System.err.printf("%s: interrupted%n", this.getName());
+                logger.error("{} interrupted", getName());
             }
         }
 
-        System.out.printf("%s: Finished%n", this.getName());
+        logger.info("{} worker stopped", getName());
     }
 
     private void executeMap(MapTask mapTask) {
-        System.out.printf("%s: Starting map task %d%n", this.getName(), mapTask.getId());
+        logger.info("{} starting map task {}", this.getName(), mapTask.getId());
         List<KeyValue> keyValues = map(mapTask.getFile());
         if (!keyValues.isEmpty()) {
             MapTaskResult mapTaskResult = new MapTaskResult(new HashSet<>());
 
             writeIntermediateFiles(keyValues, mapTask.getId(), mapTask.getNumReduceTasks(), mapTaskResult);
 
-            manager.completeMapTask(mapTask, mapTaskResult, Thread.currentThread());
+            manager.completeMapTask(mapTask, mapTaskResult);
         }
     }
 
@@ -79,7 +82,7 @@ public class Worker extends Thread {
                 }
             }
         } catch (IOException e) {
-            System.err.printf("%s: Error reading input file `%s`: %s%n", this.getName(), file, e.getMessage());
+            logger.error("{} error reading input file `{}`", this.getName(), file, e);
         }
         return result;
     }
@@ -106,7 +109,7 @@ public class Worker extends Thread {
                 }
             }
         } catch (IOException e) {
-            System.out.printf("%s: Error write intermediate files `%s`: %s%n", getName(), taskDir, e.getMessage());
+            logger.error("{} error writing intermediate files", getName(), e);
         } finally {
             closeWriters(writers);
         }
@@ -117,7 +120,7 @@ public class Worker extends Thread {
             try {
                 return new BufferedWriter(new FileWriter(fileName, true));
             } catch (IOException e) {
-                System.err.printf("%s: Error opening file `%s`: %s%n ", getName(), fileName, e.getMessage());
+                logger.error("{} error opening file {}", getName(), fileName, e);
                 return null;
             }
         });
@@ -130,20 +133,20 @@ public class Worker extends Thread {
                     try {
                         writer.close();
                     } catch (IOException e) {
-                        System.err.printf("%s: Error closing writer for file: %s%n", getName(), e.getMessage());
+                        logger.error("{} error closing writer for file: {}", getName(), e.getMessage());
                     }
                 });
     }
 
 
     private void executeReduce(ReduceTask reduceTask) {
-        System.out.printf("%s: Starting reduce task %d%n", this.getName(), reduceTask.getId());
+        logger.info("{} starting reduce task {}", this.getName(), reduceTask.getId());
 
         Map<String, List<String>> reduceMap = fillReduceMap(reduceTask);
 
         ReduceTaskResult result = new ReduceTaskResult(getResult(reduceMap));
 
-        manager.completeReduceTask(reduceTask, result, Thread.currentThread());
+        manager.completeReduceTask(reduceTask, result);
     }
 
     private Set<KeyValue> getResult(Map<String, List<String>> reduceMap) {
@@ -171,7 +174,7 @@ public class Worker extends Thread {
                 processLine(reduceMap, line);
             }
         } catch (IOException e) {
-            System.err.printf("%s: Error reading file `%s`: %s%n", getName(), fileName, e.getMessage());
+            logger.error("{} error reading intermediate file {}", getName(), fileName, e);
         }
     }
 
@@ -182,6 +185,7 @@ public class Worker extends Thread {
                 reduceMap.computeIfAbsent(words[0], k -> new ArrayList<>()).add(words[1]);
             } else {
                 System.out.printf("%s: Invalid line `%s`%n", getName(), line);
+                logger.warn("{} invalid line `{}`", getName(), line);
             }
         }
     }

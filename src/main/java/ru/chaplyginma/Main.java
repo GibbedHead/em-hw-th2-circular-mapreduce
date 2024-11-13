@@ -1,5 +1,7 @@
 package ru.chaplyginma;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.chaplyginma.manager.Manager;
 import ru.chaplyginma.util.FileUtil;
 import ru.chaplyginma.worker.Worker;
@@ -14,9 +16,12 @@ import java.util.List;
 import java.util.Set;
 
 public class Main {
+
+    private static final Logger logger = LoggerFactory.getLogger(Main.class);
+
     public static void main(String[] args) {
-        final int numWorkers = 10;
-        final int numReduceTasks = 1;
+        final int numWorkers = 4;
+        final int numReduceTasks = 10;
         final String workDir = "result";
 
         FileUtil.clearDirectory(new File(workDir));
@@ -38,10 +43,10 @@ public class Main {
                 worker.join();
             }
         } catch (IOException e) {
-            System.out.println("Can't load files: " + e.getMessage());
+            logger.error("Can't source load files", e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            System.out.println("Threads interrupted: " + e.getMessage());
+            logger.error("Threads interrupted", e);
         }
     }
 

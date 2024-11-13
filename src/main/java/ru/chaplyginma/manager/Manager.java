@@ -1,5 +1,7 @@
 package ru.chaplyginma.manager;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.chaplyginma.domain.KeyValue;
 import ru.chaplyginma.task.*;
 
@@ -19,7 +21,7 @@ import java.util.stream.Collectors;
 
 public class Manager extends Thread {
 
-    private static final int WORKER_TIMEOUT_MILLISECONDS = 100;
+    private static final int WORKER_TIMEOUT_MILLISECONDS = 200;
 
     private final Set<String> files;
     private final int numReduceTasks;
@@ -32,6 +34,7 @@ public class Manager extends Thread {
     private final Lock lock = new ReentrantLock();
     private final Map<Task, MapTaskResult> mapResults = new ConcurrentHashMap<>();
     private final Map<Task, ReduceTaskResult> reduceResults = new ConcurrentHashMap<>();
+    private final Logger logger = LoggerFactory.getLogger(Manager.class);
     private volatile boolean working = true;
 
     public Manager(Set<String> files, int numReduceTasks, String workDir) {
@@ -45,31 +48,30 @@ public class Manager extends Thread {
 
     @Override
     public void run() {
-        System.out.println("Manager: Started");
+        logger.info("Started");
 
         createMapTasks();
         waitForMapTasksCompletion();
-        System.out.println("Manager: Map tasks completed");
+        logger.info("Map tasks completed");
 
         clearQueues();
 
         createReduceTasks();
         waitForReduceTasksCompletion();
-        System.out.println("Manager: Reduce tasks completed");
+        logger.info("Reduce tasks completed");
 
         writeResult();
 
         clearQueues();
 
         finish();
-        System.out.println("Manager finished.");
+        logger.info("Finished.");
     }
 
-    public Task getTask(Thread thread) throws InterruptedException {
+    public Task getTask() throws InterruptedException {
         final Task task = taskQueue.poll(1, TimeUnit.MILLISECONDS);
         if (task != null) {
             if (isTaskCompleted(task)) {
-                System.out.printf("%s: Taking completed task: %s%n", thread.getName(), task.getId());
                 return null;
             }
             task.start();
@@ -78,12 +80,12 @@ public class Manager extends Thread {
         return task;
     }
 
-    public void completeMapTask(MapTask task, MapTaskResult mapTaskResult, Thread thread) {
-        completeTask(task, mapTaskResult, thread, mapResults, mapLatch, "map");
+    public void completeMapTask(MapTask task, MapTaskResult mapTaskResult) {
+        completeTask(task, mapTaskResult, mapResults, mapLatch, "map");
     }
 
-    public void completeReduceTask(ReduceTask task, ReduceTaskResult result, Thread thread) {
-        completeTask(task, result, thread, reduceResults, reduceLatch, "reduce");
+    public void completeReduceTask(ReduceTask task, ReduceTaskResult result) {
+        completeTask(task, result, reduceResults, reduceLatch, "reduce");
     }
 
     public boolean isWorking() {
@@ -94,14 +96,14 @@ public class Manager extends Thread {
         return mapResults.containsKey(task) || reduceResults.containsKey(task);
     }
 
-    private <T> void completeTask(Task task, T taskResult, Thread thread,
+    private <T> void completeTask(Task task,
+                                  T taskResult,
                                   Map<Task, T> resultMap,
                                   CountDownLatch latch,
                                   String taskType) {
         lock.lock();
         try {
             if (resultMap.containsKey(task)) {
-                System.out.printf("%s: Result dropped for task %d %n", thread.getName(), task.getId());
                 return;
             }
 
@@ -112,7 +114,7 @@ public class Manager extends Thread {
 
             resultMap.put(task, taskResult);
             latch.countDown();
-            System.out.printf("%s: Completed %s task %d %n", thread.getName(), taskType, task.getId());
+            logger.info("Completed {} task {} ", taskType, task.getId());
         } finally {
             lock.unlock();
         }
@@ -122,7 +124,7 @@ public class Manager extends Thread {
         for (String file : files) {
             taskQueue.add(new MapTask(file, numReduceTasks));
         }
-        System.out.printf("Manager: Map tasks created%n");
+        logger.info("Map tasks created");
     }
 
     private void createReduceTasks() {
@@ -130,7 +132,7 @@ public class Manager extends Thread {
         for (int i = 0; i < numReduceTasks; i++) {
             taskQueue.add(new ReduceTask(getMapFilesByReduceId(i)));
         }
-        System.out.printf("Manager: Reduce tasks created%n");
+        logger.info("Reduce tasks created");
     }
 
     private Set<String> getMapFilesByReduceId(int reduceId) {
@@ -143,7 +145,6 @@ public class Manager extends Thread {
 
     private void scheduleTimeout(Task task) {
         if (timeoutScheduler.isShutdown() || timeoutScheduler.isTerminated()) {
-            System.out.println("Scheduler is shutting down, task " + task.getId() + " cannot be scheduled.");
             return;
         }
 
@@ -166,9 +167,9 @@ public class Manager extends Thread {
                 if (mapResults.containsKey(task)) {
                     return;
                 }
-                System.out.println("Map task " + task.getId() + " returned to queue due to timeout");
+                logger.info("Map task {} returned to queue due to timeout", task.getId());
                 if (!taskQueue.offer(task)) {
-                    System.out.printf("Cannot return timed out task %s to queue%n", task.getId());
+                    logger.error("Cannot return timed out task {} to queue", task.getId());
                 }
                 task.setAssigned(false);
             }
@@ -197,7 +198,7 @@ public class Manager extends Thread {
             mapLatch.await();
         } catch (InterruptedException e) {
             interrupt();
-            System.out.println("Map tasks wait interrupted");
+            logger.error("Map tasks interrupted");
         }
     }
 
@@ -206,7 +207,7 @@ public class Manager extends Thread {
             reduceLatch.await();
         } catch (InterruptedException e) {
             interrupt();
-            System.out.println("Reduce tasks wait interrupted");
+            logger.error("Reduce tasks interrupted");
         }
     }
 
@@ -221,7 +222,7 @@ public class Manager extends Thread {
         try {
             Files.write(Paths.get("%s/result.txt".formatted(workDir)), sortedResult, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
         } catch (IOException e) {
-            System.out.printf("Cannot write result to file: %s%n", e.getMessage());
+            logger.error("Cannot write result to file: {}", e.getMessage());
         }
     }
 }

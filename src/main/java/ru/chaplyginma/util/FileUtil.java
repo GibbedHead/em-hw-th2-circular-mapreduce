@@ -6,7 +6,8 @@ import java.nio.file.Files;
 
 public class FileUtil {
 
-    private FileUtil() {}
+    private FileUtil() {
+    }
 
     public static void createDirectory(String directoryPath) {
         File directory = new File(directoryPath);
