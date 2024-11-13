@@ -22,6 +22,15 @@ public class Worker extends Thread {
         this.manager = manager;
     }
 
+    private static int getReduceTaskId(int numReduceTasks, KeyValue keyValue) {
+        int reduceTaskId = 0;
+        int hash = keyValue.key().hashCode();
+        if (hash != Integer.MIN_VALUE) {
+            reduceTaskId = Math.abs(hash) % numReduceTasks;
+        }
+        return reduceTaskId;
+    }
+
     @Override
     public void run() throws IllegalStateException {
         System.out.printf("%s: Started%n", this.getName());
@@ -33,7 +42,8 @@ public class Worker extends Thread {
                     switch (task) {
                         case MapTask mapTask -> executeMap(mapTask);
                         case ReduceTask reduceTask -> executeReduce(reduceTask);
-                        default -> throw new IllegalStateException("Unexpected value type: " + task.getClass().getName());
+                        default ->
+                                throw new IllegalStateException("Unexpected value type: " + task.getClass().getName());
                     }
                 }
             } catch (InterruptedException e) {
@@ -48,9 +58,11 @@ public class Worker extends Thread {
     private void executeMap(MapTask mapTask) {
         System.out.printf("%s: Starting map task %d%n", this.getName(), mapTask.getId());
         List<KeyValue> keyValues = map(mapTask.getFile());
-        if (keyValues != null) {
+        if (!keyValues.isEmpty()) {
             MapTaskResult mapTaskResult = new MapTaskResult(new HashSet<>());
+
             writeIntermediateFiles(keyValues, mapTask.getId(), mapTask.getNumReduceTasks(), mapTaskResult);
+
             manager.completeMapTask(mapTask, mapTaskResult, Thread.currentThread());
         }
     }
@@ -68,7 +80,6 @@ public class Worker extends Thread {
             }
         } catch (IOException e) {
             System.err.printf("%s: Error reading input file `%s`: %s%n", this.getName(), file, e.getMessage());
-            return null;
         }
         return result;
     }
@@ -99,15 +110,6 @@ public class Worker extends Thread {
         } finally {
             closeWriters(writers);
         }
-    }
-
-    private static int getReduceTaskId(int numReduceTasks, KeyValue keyValue) {
-        int reduceTaskId = 0;
-        int hash = keyValue.key().hashCode();
-        if (hash != Integer.MIN_VALUE) {
-            reduceTaskId = Math.abs(hash) % numReduceTasks;
-        }
-        return reduceTaskId;
     }
 
     private BufferedWriter getWriter(Map<Integer, BufferedWriter> writers, int reduceTaskId, String fileName) {
@@ -157,26 +159,31 @@ public class Worker extends Thread {
     private Map<String, List<String>> fillReduceMap(ReduceTask reduceTask) {
         Map<String, List<String>> reduceMap = new HashMap<>();
         for (String fileName : reduceTask.getFiles()) {
-            try (BufferedReader br = new BufferedReader(new FileReader(fileName))) {
-                String line;
-                while ((line = br.readLine()) != null) {
-                    if (!line.isBlank()) {
-                        String[] words = line.split("\\t");
-                        if (words.length == 2) {
-                            if (words[0].equals("sam")) {
-                                System.out.printf("sam found during task %d in file %s%n", reduceTask.getId(), fileName);
-                            }
-                            reduceMap.computeIfAbsent(words[0], k -> new ArrayList<>()).add(words[1]);
-                        } else {
-                            System.out.printf("%s: Invalid line `%s`%n", getName(), line);
-                        }
-                    }
-                }
-            } catch (IOException e) {
-                System.err.printf("%s: Error reading file `%s`: %s%n", getName(), fileName, e.getMessage());
-            }
+            processFile(fileName, reduceMap);
         }
         return reduceMap;
+    }
+
+    private void processFile(String fileName, Map<String, List<String>> reduceMap) {
+        try (BufferedReader br = new BufferedReader(new FileReader(fileName))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                processLine(reduceMap, line);
+            }
+        } catch (IOException e) {
+            System.err.printf("%s: Error reading file `%s`: %s%n", getName(), fileName, e.getMessage());
+        }
+    }
+
+    private void processLine(Map<String, List<String>> reduceMap, String line) {
+        if (!line.isBlank()) {
+            String[] words = line.split("\\t");
+            if (words.length == 2) {
+                reduceMap.computeIfAbsent(words[0], k -> new ArrayList<>()).add(words[1]);
+            } else {
+                System.out.printf("%s: Invalid line `%s`%n", getName(), line);
+            }
+        }
     }
 
     private KeyValue reduce(String key, List<String> values) {

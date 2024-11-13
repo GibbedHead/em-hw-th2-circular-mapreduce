@@ -8,7 +8,10 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 
 public class Main {
     public static void main(String[] args) {
@@ -36,14 +39,10 @@ public class Main {
             }
         } catch (IOException e) {
             System.out.println("Can't load files: " + e.getMessage());
-            throw new RuntimeException(e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             System.out.println("Threads interrupted: " + e.getMessage());
-            throw new RuntimeException(e);
         }
-
-
     }
 
     private static Set<String> loadFileNames() throws IOException {

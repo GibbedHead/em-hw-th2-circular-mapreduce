@@ -15,6 +15,14 @@ public class Task {
         this.id = getNextId();
     }
 
+    private static int getNextId() {
+        return idGenerator++;
+    }
+
+    public static void resetGenerator() {
+        idGenerator = 0;
+    }
+
     public void start() {
         this.startTime = Instant.now();
         this.isAssigned = true;
@@ -35,13 +43,5 @@ public class Task {
 
     public int getId() {
         return id;
-    }
-
-    private static int getNextId() {
-        return idGenerator++;
-    }
-
-    public static void resetGenerator() {
-        idGenerator = 0;
     }
 }

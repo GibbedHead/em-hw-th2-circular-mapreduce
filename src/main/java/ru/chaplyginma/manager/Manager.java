@@ -12,7 +12,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.*;
-import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
@@ -25,19 +24,15 @@ public class Manager extends Thread {
     private final Set<String> files;
     private final int numReduceTasks;
     private final String workDir;
-
-    private volatile boolean working = true;
     private final BlockingQueue<Task> taskQueue = new LinkedBlockingQueue<>();
     private final ScheduledExecutorService timeoutScheduler = Executors.newScheduledThreadPool(1);
-    private final Map<Task, ScheduledFuture<?>> taskScheduledFutures = new ConcurrentHashMap<>();
-
+    private final Map<Task, ScheduledFuture<?>> timeoutFutures = new ConcurrentHashMap<>();
     private final CountDownLatch mapLatch;
     private final CountDownLatch reduceLatch;
     private final Lock lock = new ReentrantLock();
-    private final Condition rescheduledCondition = lock.newCondition();
-
-    private final Map<Task, MapTaskResult> mapTasksResultMap = new ConcurrentHashMap<>();
-    private final Map<Task, ReduceTaskResult> reduceTasksResultMap = new ConcurrentHashMap<>();
+    private final Map<Task, MapTaskResult> mapResults = new ConcurrentHashMap<>();
+    private final Map<Task, ReduceTaskResult> reduceResults = new ConcurrentHashMap<>();
+    private volatile boolean working = true;
 
     public Manager(Set<String> files, int numReduceTasks, String workDir) {
         this.files = files;
@@ -46,65 +41,34 @@ public class Manager extends Thread {
 
         this.mapLatch = new CountDownLatch(files.size());
         this.reduceLatch = new CountDownLatch(numReduceTasks);
-
-
     }
 
     @Override
     public void run() {
         System.out.println("Manager: Started");
+
         createMapTasks();
         waitForMapTasksCompletion();
-
-        System.out.println("************************");
-        printMapRes();
-        printMapFilesTotalLines();
-        System.out.println("************************");
-
         System.out.println("Manager: Map tasks completed");
 
         clearQueues();
 
         createReduceTasks();
         waitForReduceTasksCompletion();
+        System.out.println("Manager: Reduce tasks completed");
 
         writeResult();
 
-        working = false;
         clearQueues();
 
-        System.out.println("Manager: Reduce tasks completed");
-
         finish();
-    }
-
-    private void printMapRes() {
-        List<String> mapFiles =  mapTasksResultMap.values().stream()
-                .flatMap(r -> r.files().stream())
-                .toList();
-        System.out.println("Map files number: " + mapFiles.size());
-        //mapFiles.forEach(System.out::println);
-    }
-
-    private void printMapFilesTotalLines() {
-        List<String> mapFiles =  mapTasksResultMap.values().stream()
-                .flatMap(r -> r.files().stream())
-                .toList();
-        int count = 0;
-        for (String mapFile : mapFiles) {
-            try {
-                count += Files.lines(Paths.get(mapFile)).count();
-            } catch (IOException e) {
-                System.out.println("oops");
-            }
-        }
-        System.out.println("Map files total: " + count);
+        System.out.println("Manager finished.");
     }
 
     public Task getTask(Thread thread) throws InterruptedException {
         final Task task = taskQueue.poll(1, TimeUnit.MILLISECONDS);
         if (task != null) {
-            if (mapTasksResultMap.containsKey(task) || reduceTasksResultMap.containsKey(task)) {
+            if (isTaskCompleted(task)) {
                 System.out.printf("%s: Taking completed task: %s%n", thread.getName(), task.getId());
                 return null;
             }
@@ -115,11 +79,19 @@ public class Manager extends Thread {
     }
 
     public void completeMapTask(MapTask task, MapTaskResult mapTaskResult, Thread thread) {
-        completeTask(task, mapTaskResult, thread, mapTasksResultMap, mapLatch, "map");
+        completeTask(task, mapTaskResult, thread, mapResults, mapLatch, "map");
     }
 
     public void completeReduceTask(ReduceTask task, ReduceTaskResult result, Thread thread) {
-        completeTask(task, result, thread, reduceTasksResultMap, reduceLatch, "reduce");
+        completeTask(task, result, thread, reduceResults, reduceLatch, "reduce");
+    }
+
+    public boolean isWorking() {
+        return working;
+    }
+
+    private boolean isTaskCompleted(Task task) {
+        return mapResults.containsKey(task) || reduceResults.containsKey(task);
     }
 
     private <T> void completeTask(Task task, T taskResult, Thread thread,
@@ -129,19 +101,17 @@ public class Manager extends Thread {
         lock.lock();
         try {
             if (resultMap.containsKey(task)) {
-                rescheduledCondition.signalAll();
                 System.out.printf("%s: Result dropped for task %d %n", thread.getName(), task.getId());
                 return;
             }
 
-            ScheduledFuture<?> scheduledFuture = taskScheduledFutures.remove(task);
+            ScheduledFuture<?> scheduledFuture = timeoutFutures.remove(task);
             if (scheduledFuture != null) {
                 scheduledFuture.cancel(false);
             }
 
             resultMap.put(task, taskResult);
             latch.countDown();
-            rescheduledCondition.signal();
             System.out.printf("%s: Completed %s task %d %n", thread.getName(), taskType, task.getId());
         } finally {
             lock.unlock();
@@ -165,7 +135,7 @@ public class Manager extends Thread {
 
     private Set<String> getMapFilesByReduceId(int reduceId) {
         String reduceIdPattern = "-%d.txt".formatted(reduceId);
-        return mapTasksResultMap.values().stream()
+        return mapResults.values().stream()
                 .flatMap(mapTaskResult -> mapTaskResult.files().stream())
                 .filter(fileName -> fileName.endsWith(reduceIdPattern))
                 .collect(Collectors.toSet());
@@ -179,7 +149,7 @@ public class Manager extends Thread {
 
         Runnable timeoutHandler = () -> checkTaskTimeout(task);
 
-        taskScheduledFutures.put(
+        timeoutFutures.put(
                 task,
                 timeoutScheduler.schedule(
                         timeoutHandler,
@@ -192,13 +162,14 @@ public class Manager extends Thread {
         lock.lock();
         try {
             if (task.isAssigned() && task.isExpired(WORKER_TIMEOUT_MILLISECONDS, TimeUnit.MILLISECONDS)) {
-                taskScheduledFutures.remove(task);
-                if (mapTasksResultMap.containsKey(task)) {
+                timeoutFutures.remove(task);
+                if (mapResults.containsKey(task)) {
                     return;
                 }
                 System.out.println("Map task " + task.getId() + " returned to queue due to timeout");
-                taskQueue.offer(task);
-                rescheduledCondition.signal();
+                if (!taskQueue.offer(task)) {
+                    System.out.printf("Cannot return timed out task %s to queue%n", task.getId());
+                }
                 task.setAssigned(false);
             }
         } finally {
@@ -207,25 +178,18 @@ public class Manager extends Thread {
     }
 
     private void finish() {
+        working = false;
         timeoutScheduler.shutdown();
-        System.out.println("Manager finished.");
     }
 
     private void clearQueues() {
         taskQueue.clear();
         cancelScheduledTimeoutChecks();
-
-        lock.lock();
-        try {
-            rescheduledCondition.signalAll();
-        } finally {
-            lock.unlock();
-        }
     }
 
     private void cancelScheduledTimeoutChecks() {
-        taskScheduledFutures.values().forEach(future -> future.cancel(false));
-        taskScheduledFutures.clear();
+        timeoutFutures.values().forEach(future -> future.cancel(false));
+        timeoutFutures.clear();
     }
 
     private void waitForMapTasksCompletion() {
@@ -246,26 +210,16 @@ public class Manager extends Thread {
         }
     }
 
-    public boolean isWorking() {
-        return working;
-    }
-
-    private void  writeResult() {
-        List<KeyValue> ff = reduceTasksResultMap.values().stream()
-                .flatMap(res -> res.keyValueSet().stream())
-                .toList();
-        List<KeyValue> f = ff.stream().filter(kv -> kv.key().equals("sam")).toList();
-
-        List<String> d = reduceTasksResultMap.values().stream()
+    private void writeResult() {
+        List<String> sortedResult = reduceResults.values().stream()
                 .flatMap(res -> res.keyValueSet().stream())
                 .sorted(Comparator.comparingInt((KeyValue kv) -> Integer.parseInt(kv.value())).reversed()
                         .thenComparing(KeyValue::key))
                 .map(KeyValue::toString)
                 .toList();
-        String ffg = d.stream().filter(kv -> kv.contains("sam")).findFirst().orElse(null);
 
         try {
-            Files.write(Paths.get("%s/result.txt".formatted(workDir)), d, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+            Files.write(Paths.get("%s/result.txt".formatted(workDir)), sortedResult, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
         } catch (IOException e) {
             System.out.printf("Cannot write result to file: %s%n", e.getMessage());
         }
