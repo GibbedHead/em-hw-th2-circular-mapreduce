@@ -28,12 +28,7 @@ public class Worker extends Thread {
     }
 
     private static int getReduceTaskId(int numReduceTasks, KeyValue keyValue) {
-        int reduceTaskId = 0;
-        int hash = keyValue.key().hashCode();
-        if (hash != Integer.MIN_VALUE) {
-            reduceTaskId = Math.abs(hash) % numReduceTasks;
-        }
-        return reduceTaskId;
+        return (keyValue.key().hashCode() & Integer.MAX_VALUE) % numReduceTasks;
     }
 
     @Override
