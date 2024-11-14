@@ -29,7 +29,7 @@ MapReduce. Фреймворк предназначен для управлени
 
 1. **Клонируйте репозиторий**:
    ```bash
-   git https://github.com/GibbedHead/em-hw-th2-mapreduce.git;
+   git clone https://github.com/GibbedHead/em-hw-th2-mapreduce.git;
    ```
 2. **Запустите тесты**
    ```bash
