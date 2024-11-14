@@ -33,7 +33,7 @@ public class Main {
             List<Worker> workers = new ArrayList<>(numWorkers);
 
             for (int i = 0; i < numWorkers; i++) {
-                workers.add(new Worker(manager, workDir));
+                workers.add(new Worker(manager, workDir, i));
             }
 
             workers.forEach(Thread::start);

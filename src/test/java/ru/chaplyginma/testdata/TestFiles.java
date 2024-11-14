@@ -47,5 +47,22 @@ public class TestFiles {
         return Instancio.gen().text().loremIpsum().list(5 + RANDOM.nextInt(5));
     }
 
+    public static String createSimpleTestFile(String workDir) {
+        FileUtil.manageDirectory(workDir);
+
+        String fileName = "%s/simple-test-file.txt".formatted(workDir);
+        Path filePath = Paths.get(fileName);
+        try {
+            Files.write(filePath, getSimpleContent());
+        } catch (IOException e) {
+            System.out.printf("Error writing simple test file: %s%n", fileName);
+        }
+
+        return fileName;
+    }
+
+    private static List<String> getSimpleContent() {
+        return List.of("One", "Two", "Three", "Four", "Five", "Six", "one", "two");
+    }
 
 }

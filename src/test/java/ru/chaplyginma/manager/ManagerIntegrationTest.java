@@ -30,7 +30,7 @@ class ManagerIntegrationTest {
 
         assertThat(manager.isWorking()).isTrue();
 
-        Worker worker = new Worker(manager, RESULT_DIR);
+        Worker worker = new Worker(manager, RESULT_DIR, 1);
         worker.start();
 
         manager.join();

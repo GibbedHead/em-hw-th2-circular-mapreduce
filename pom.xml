@@ -19,6 +19,8 @@
         <instancio-junit.version>5.0.2</instancio-junit.version>
         <instancio-core.version>5.0.2</instancio-core.version>
         <awaitility.version>4.2.1</awaitility.version>
+        <mockito-core.version>5.11.0</mockito-core.version>
+        <mockito-junit-jupiter.version>5.11.0</mockito-junit-jupiter.version>
     </properties>
 
     <dependencies>
@@ -58,6 +60,18 @@
             <groupId>org.awaitility</groupId>
             <artifactId>awaitility</artifactId>
             <version>${awaitility.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <version>${mockito-core.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-junit-jupiter</artifactId>
+            <version>${mockito-junit-jupiter.version}</version>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 

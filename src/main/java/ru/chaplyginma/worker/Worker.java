@@ -12,22 +12,20 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class Worker extends Thread {
 
     private static final String NAME_TEMPLATE = "Worker_%d";
     private static final String MAPS_SPLIT_REGEX = "\\P{L}+";
     private static final String INTERMEDIATE_FILE_SPLIT_REGEX = "\\t";
-    private static final AtomicInteger id = new AtomicInteger(1);
 
     private final String workDir;
     private final Manager manager;
     private final Logger logger = LoggerFactory.getLogger(Worker.class);
 
-    public Worker(Manager manager, String workDir) {
+    public Worker(Manager manager, String workDir, int id) {
         this.workDir = workDir;
-        this.setName(NAME_TEMPLATE.formatted(id.getAndIncrement()));
+        this.setName(NAME_TEMPLATE.formatted(id));
         this.manager = manager;
     }
 
