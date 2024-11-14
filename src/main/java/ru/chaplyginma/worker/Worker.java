@@ -13,6 +13,14 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
 
+/**
+ * Represents a worker that executes map and reduce tasks in a distributed processing framework.
+ *
+ * <p>The {@code Worker} class extends {@link Thread} to facilitate concurrent execution of tasks.
+ * It retrieves tasks from a manager and either executes map tasks or reduce tasks based on the type
+ * of task it receives. The worker also handles input file processing, intermediate file writing,
+ * and result generation.</p>
+ */
 public class Worker extends Thread {
 
     private static final String NAME_TEMPLATE = "Worker_%d";
@@ -23,6 +31,13 @@ public class Worker extends Thread {
     private final Manager manager;
     private final Logger logger = LoggerFactory.getLogger(Worker.class);
 
+    /**
+     * Constructs a worker instance for processing tasks.
+     *
+     * @param manager the manager coordinating the worker's tasks.
+     * @param workDir the working directory where intermediate files will be stored.
+     * @param id      the ID of the worker for naming the thread.
+     */
     public Worker(Manager manager, String workDir, int id) {
         this.workDir = workDir;
         this.setName(NAME_TEMPLATE.formatted(id));
@@ -33,6 +48,12 @@ public class Worker extends Thread {
         return (keyValue.key().hashCode() & Integer.MAX_VALUE) % numReduceTasks;
     }
 
+    /**
+     * The main execution method of the worker thread. It continuously polls for tasks
+     * from the manager and executes them until interrupted.
+     *
+     * @throws IllegalStateException if an unexpected task type is encountered.
+     */
     @Override
     public void run() throws IllegalStateException {
         logger.info("{} worker started", getName());

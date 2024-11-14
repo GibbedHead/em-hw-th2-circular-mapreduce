@@ -18,7 +18,14 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
-
+/**
+ * Manages the execution of map and reduce tasks in a distributed processing framework.
+ *
+ * <p>The {@code Manager} class is responsible for creating, managing, and executing
+ * map and reduce tasks. It oversees the lifecycle of tasks, including task creation,
+ * completion tracking, and handling timeout scenarios. It also manages the collection
+ * of results from both map and reduce phases and writes the final sorted output.</p>
+ */
 public class Manager extends Thread {
 
     private static final int WORKER_TIMEOUT_MILLISECONDS = 200;
@@ -37,6 +44,13 @@ public class Manager extends Thread {
     private final Logger logger = LoggerFactory.getLogger(Manager.class);
     private volatile boolean working = true;
 
+    /**
+     * Constructs a new Manager to handle the specified set of files and number of reduce tasks.
+     *
+     * @param files          the set of input files to be processed by map tasks.
+     * @param numReduceTasks the number of reduce tasks to be scheduled after the mapping.
+     * @param workDir        the working directory where results will be stored.
+     */
     public Manager(Set<String> files, int numReduceTasks, String workDir) {
         this.files = files;
         this.workDir = workDir;
@@ -70,6 +84,12 @@ public class Manager extends Thread {
         logger.info("Finished.");
     }
 
+    /**
+     * Retrieves and removes the next task from the task queue, waiting if necessary.
+     *
+     * @return the next task to be executed or {@code null} if no tasks are available.
+     * @throws InterruptedException if interrupted while waiting.
+     */
     public Task getTask() throws InterruptedException {
         final Task task = taskQueue.poll(1, TimeUnit.MILLISECONDS);
 
@@ -85,14 +105,31 @@ public class Manager extends Thread {
         return task;
     }
 
+    /**
+     * Completes a given map task with the provided result and updates the task-related structures.
+     *
+     * @param task          the map task to be completed.
+     * @param mapTaskResult the result associated with the completed map task.
+     */
     public void completeMapTask(MapTask task, MapTaskResult mapTaskResult) {
         completeTask(task, mapTaskResult, mapResults, mapLatch, "map");
     }
 
+    /**
+     * Completes a given reduce task with the provided result and updates the task-related structures.
+     *
+     * @param task   the reduce task to be completed.
+     * @param result the result associated with the completed reduce task.
+     */
     public void completeReduceTask(ReduceTask task, ReduceTaskResult result) {
         completeTask(task, result, reduceResults, reduceLatch, "reduce");
     }
 
+    /**
+     * Checks if the manager is currently working on tasks.
+     *
+     * @return {@code true} if the manager is working; {@code false} otherwise.
+     */
     public boolean isWorking() {
         return working;
     }
