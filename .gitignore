@@ -42,3 +42,4 @@ build/
 csv
 dependency-reduced-pom.xml
 result
+test_tmp

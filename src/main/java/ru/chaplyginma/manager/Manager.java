@@ -44,6 +44,8 @@ public class Manager extends Thread {
 
         this.mapLatch = new CountDownLatch(files.size());
         this.reduceLatch = new CountDownLatch(numReduceTasks);
+
+        this.setName("Manager");
     }
 
     @Override

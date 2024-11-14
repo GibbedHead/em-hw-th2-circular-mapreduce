@@ -40,4 +40,16 @@ public class FileUtil {
             }
         }
     }
+
+    public static void manageDirectory(String directoryName) {
+        File directory = new File(directoryName);
+        if (directory.exists()) {
+            clearDirectory(directory);
+        } else {
+            boolean created = directory.mkdirs();
+            if (!created) {
+                logger.error("Cannot temp create directory {}", directoryName);
+            }
+        }
+    }
 }
